@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Разработка SEO-ядра</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Разработка SEO-ядра</h1>
+
+    <form id="analyze-form">
+      <label for="url">Ссылка на сайт</label>
+      <input type="url" id="url" name="url" placeholder="https://example.com" required />
+      <button type="submit">Анализировать</button>
+    </form>
+
+    <div id="log" class="log" aria-live="polite"></div>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById('analyze-form');
+    const logBox = document.getElementById('log');
+    const resultBox = document.getElementById('result');
+
+    function appendLog(line) {
+      const p = document.createElement('div');
+      p.textContent = line;
+      logBox.appendChild(p);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function buildList(items) {
+      const ul = document.createElement('ul');
+      for (const it of items) {
+        const li = document.createElement('li');
+        li.textContent = String(it);
+        ul.appendChild(li);
+      }
+      return ul;
+    }
+
+    function buildResult(container, data) {
+      container.innerHTML = '';
+      if (!data || typeof data !== 'object') {
+        container.textContent = JSON.stringify(data ?? {}, null, 2);
+        return;
+      }
+
+      const title = document.createElement('h2');
+      title.textContent = 'Итоговый результат';
+      container.appendChild(title);
+
+      // Keywords
+      if (Array.isArray(data.keywords) && data.keywords.length) {
+        const h2 = document.createElement('h3');
+        h2.textContent = `Ключевые слова (${data.keywords.length})`;
+        container.appendChild(h2);
+        container.appendChild(buildList(data.keywords));
+      }
+
+      // Clusters
+      if (Array.isArray(data.clusters) && data.clusters.length) {
+        const h2 = document.createElement('h3');
+        h2.textContent = `Кластеры (${data.clusters.length})`;
+        container.appendChild(h2);
+        for (const cl of data.clusters) {
+          const box = document.createElement('div');
+          const h3 = document.createElement('h4');
+          h3.textContent = cl && cl.name ? String(cl.name) : 'Кластер';
+          box.appendChild(h3);
+          if (Array.isArray(cl?.items) && cl.items.length) {
+            box.appendChild(buildList(cl.items));
+          }
+          container.appendChild(box);
+        }
+      }
+
+      // Meta
+      if (data.meta && typeof data.meta === 'object') {
+        const h2 = document.createElement('h3');
+        h2.textContent = 'Мета-теги';
+        container.appendChild(h2);
+        const dl = document.createElement('dl');
+        const add = (k, v) => {
+          if (v == null) return;
+          const dt = document.createElement('dt');
+          dt.textContent = k;
+          const dd = document.createElement('dd');
+          dd.textContent = String(v);
+          dl.appendChild(dt);
+          dl.appendChild(dd);
+        };
+        add('title', data.meta.title);
+        add('h1', data.meta.h1);
+        add('description', data.meta.description);
+        container.appendChild(dl);
+      }
+
+      // Notes
+      if (data.notes) {
+        const h2 = document.createElement('h3');
+        h2.textContent = 'Рекомендации';
+        container.appendChild(h2);
+        const p = document.createElement('p');
+        p.textContent = String(data.notes);
+        container.appendChild(p);
+      }
+
+      // Если ничего не отрендерили по структуре
+      if (container.children.length <= 1) {
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(data, null, 2);
+        container.appendChild(pre);
+      }
+    }
+
+    async function poll(taskId) {
+      const iv = setInterval(async () => {
+        try {
+          const res = await fetch(`/status/${taskId}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          logBox.innerHTML = '';
+          (data.logs || []).forEach(appendLog);
+          if (data.error) {
+            appendLog('Ошибка: ' + data.error);
+          }
+          if (data.done) {
+            clearInterval(iv);
+            buildResult(resultBox, data.result || {});
+          }
+        } catch(e) {
+          console.error(e);
+        }
+      }, 1500);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      logBox.innerHTML = '';
+      resultBox.textContent = '';
+      const fd = new FormData(form);
+      const res = await fetch('/analyze', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.task_id) {
+        appendLog('Задача запущена: ' + data.task_id);
+        poll(data.task_id);
+      }
+    });
+  </script>
+</body>
+</html>
